@@ -831,7 +831,7 @@ app.post('/products/create-primary-with-variants', async (req, res) => {
   cost: variant.inventoryItem?.unitCost?.amount || null,
   compareAtPrice: variant.compareAtPrice,
   selectedOptions: variant.selectedOptions,
-})),    });
+})),    
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
