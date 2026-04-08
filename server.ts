@@ -94,8 +94,26 @@ function buildPrimaryProductPayload(body: any) {
   const descriptionHtml = cleanText(body.descriptionHtml);
   const vendor = brand;
   const status = 'DRAFT';
+function buildPrimaryVariantPayload(body: any) {
+  const sku = cleanText(body.sku);
+  const price = cleanText(body.price);
+  const cost = cleanText(body.cost);
+  const compareAtPrice = cleanText(body.compareAtPrice);
+  const sizes = normalizeSizes(body.sizes);
 
-  if (!brand) throw new Error('Missing brand');
+  if (!sku) throw new Error('Missing sku');
+  if (!price) throw new Error('Missing price');
+  if (!cost) throw new Error('Missing cost');
+  if (sizes.length === 0) throw new Error('Missing sizes');
+
+  return {
+    sku,
+    price,
+    cost,
+    compareAtPrice,
+    sizes,
+  };
+}  if (!brand) throw new Error('Missing brand');
   if (!productName) throw new Error('Missing productName');
   if (!colour) throw new Error('Missing colour');
 
