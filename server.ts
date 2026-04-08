@@ -475,7 +475,32 @@ app.post('/variants/update-price', async (req, res) => {
     });
   }
 });
+app.get('/test-primary-preview', (_req, res) => {
+  try {
+    const payload = buildPrimaryProductPayload({
+      brand: "Levi's",
+      productName: "469 Loose Shorts",
+      colour: "Vintage Story",
+      productType: "Shorts",
+      category: "Apparel",
+      model: "469",
+      descriptionHtml: "<p>Test product preview</p>",
+    });
 
-app.listen(PORT, () => {
+    res.json({
+      previewOnly: true,
+      rulesApplied: {
+        titleFormat: 'Brand - Product Name in Colour',
+        draftByDefault: true,
+        tagsIncluded: ['brand', 'productName', 'colour', 'productType', 'category', 'model'],
+      },
+      product: payload,
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
