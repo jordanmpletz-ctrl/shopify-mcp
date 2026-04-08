@@ -495,6 +495,7 @@ app.post('/variants/update-price', async (req, res) => {
     });
   }
 });
+
 app.get('/test-primary-preview', (_req, res) => {
   try {
     const payload = buildPrimaryProductPayload({
@@ -520,24 +521,26 @@ app.get('/test-primary-preview', (_req, res) => {
     res.status(400).json({
       error: error instanceof Error ? error.message : 'Unknown error',
     });
-  });  
+  }
+});
+
 app.get('/test-primary-variants-preview', (_req, res) => {
   try {
     const productPayload = buildPrimaryProductPayload({
       brand: "Levi's",
-      productName: '469 Loose Shorts',
-      colour: 'Vintage Story',
-      productType: 'Shorts',
-      category: 'Apparel',
-      model: '469',
-      descriptionHtml: '<p>Test product preview</p>',
+      productName: "469 Loose Shorts",
+      colour: "Vintage Story",
+      productType: "Shorts",
+      category: "Apparel",
+      model: "469",
+      descriptionHtml: "<p>Test product preview</p>",
     });
 
     const variantPayload = buildPrimaryVariantPayload({
-      sku: '39434-0157',
-      price: '88.00',
-      cost: '44.00',
-      sizes: ['30', '31', '32', '33', '34'],
+      sku: "39434-0157",
+      price: "88.00",
+      cost: "44.00",
+      sizes: ["30", "31", "32", "33", "34"],
     });
 
     res.json({
