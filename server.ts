@@ -372,8 +372,162 @@ app.post('/products/create-primary', async (req, res) => {
     });
   }
 });
+app.post('/products/create-primary-with-variants', async (req, res) => {
+  try {
+    const productPayload = buildPrimaryProductPayload(req.body);
+    const variantPayload = buildPrimaryVariantPayload(req.body);
 
-app.post('/products/update', async (req, res) => {
+    const createProductInput: Record<string, unknown> = {
+      title: productPayload.title,
+      vendor: productPayload.vendor,
+      status: productPayload.status,
+      tags: productPayload.tags,
+      productOptions: [
+        {
+          name: 'Size',
+          values: variantPayload.sizes.map((size) => ({ name: size })),
+        },
+      ],
+    };
+
+    if (productPayload.productType) {
+      createProductInput.productType = productPayload.productType;
+    }
+
+    if (productPayload.descriptionHtml) {
+      createProductInput.descriptionHtml = productPayload.descriptionHtml;
+    }
+
+    const createProductData = await shopifyGraphQL(
+      `
+      mutation CreateProduct($input: ProductCreateInput!) {
+        productCreate(product: $input) {
+          product {
+            id
+            title
+            handle
+            vendor
+            productType
+            tags
+            status
+            options {
+              id
+              name
+              optionValues {
+                id
+                name
+              }
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+      `,
+      { input: createProductInput }
+    );
+
+    if (createProductData.productCreate.userErrors.length > 0) {
+      return res.status(400).json({
+        stage: 'productCreate',
+        errors: createProductData.productCreate.userErrors,
+      });
+    }
+
+    const createdProduct = createProductData.productCreate.product;
+
+    const variantsInput = variantPayload.sizes.map((size) => ({
+      optionValues: [
+        {
+          optionName: 'Size',
+          name: size,
+        },
+      ],
+      price: variantPayload.price,
+      taxable: true,
+      inventoryPolicy: 'DENY',
+      inventoryItem: {
+        sku: variantPayload.sku,
+        tracked: true,
+        cost: variantPayload.cost,
+      },
+      ...(variantPayload.compareAtPrice
+        ? { compareAtPrice: variantPayload.compareAtPrice }
+        : {}),
+    }));
+
+    const bulkCreateData = await shopifyGraphQL(
+      `
+      mutation BulkCreateVariants($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
+        productVariantsBulkCreate(productId: $productId, variants: $variants) {
+          product {
+            id
+            title
+          }
+          productVariants {
+            id
+            title
+            price
+            compareAtPrice
+            inventoryItem {
+              sku
+              unitCost {
+                amount
+                currencyCode
+              }
+            }
+            selectedOptions {
+              name
+              value
+            }
+          }
+          userErrors {
+            field
+            message
+          }
+        }
+      }
+      `,
+      {
+        productId: createdProduct.id,
+        variants: variantsInput,
+      }
+    );
+
+    if (bulkCreateData.productVariantsBulkCreate.userErrors.length > 0) {
+      return res.status(400).json({
+        stage: 'productVariantsBulkCreate',
+        errors: bulkCreateData.productVariantsBulkCreate.userErrors,
+        createdProduct,
+      });
+    }
+
+    res.json({
+      created: true,
+      rulesApplied: {
+        titleFormat: 'Brand - Product Name in Colour',
+        draftByDefault: true,
+        sameSkuAcrossVariants: true,
+      },
+      product: createdProduct,
+      variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant: any) => ({
+        id: variant.id,
+        title: variant.title,
+        sku: variant.inventoryItem?.sku || '',
+        price: variant.price,
+        cost: variant.inventoryItem?.unitCost?.amount || null,
+        compareAtPrice: variant.compareAtPrice,
+        selectedOptions: variant.selectedOptions,
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});app.post('/products/update', async (req, res) => {
   try {
     const {
       productId,
