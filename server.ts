@@ -41,6 +41,96 @@ async function shopifyGraphQL(query: string, variables: Record<string, unknown> 
   return json.data;
 }
 
+function cleanText(value: unknown): string {
+  return String(value ?? '').trim();
+}
+
+function titleCase(input: string): string {
+  return input
+    .split(' ')
+    .filter(Boolean)
+    .map((word) => {
+      if (word.toUpperCase() === word && word.length > 1) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    })
+    .join(' ');
+}
+
+function buildPrimaryTitle(brand: string, productName: string, colour: string): string {
+  return `${brand} - ${productName} in ${colour}`;
+}
+
+function uniqueTags(tags: string[]): string[] {
+  return [...new Set(tags.map((t) => t.trim()).filter(Boolean))];
+}
+
+function buildPrimaryTags(params: {
+  brand: string;
+  productName: string;
+  colour: string;
+  productType?: string;
+  category?: string;
+  model?: string;
+}) {
+  const tags = [
+    params.brand,
+    params.productName,
+    params.colour,
+    params.productType || '',
+    params.category || '',
+    params.model || '',
+  ];
+
+  return uniqueTags(tags);
+}
+
+function buildPrimaryProductPayload(body: any) {
+  const brand = cleanText(body.brand);
+  const productName = cleanText(body.productName);
+  const colour = cleanText(body.colour);
+  const productType = cleanText(body.productType);
+  const category = cleanText(body.category);
+  const model = cleanText(body.model);
+  const descriptionHtml = cleanText(body.descriptionHtml);
+  const vendor = brand;
+  const status = 'DRAFT';
+
+  if (!brand) throw new Error('Missing brand');
+  if (!productName) throw new Error('Missing productName');
+  if (!colour) throw new Error('Missing colour');
+
+  const normalizedBrand = brand;
+  const normalizedProductName = productName;
+  const normalizedColour = colour;
+
+  const title = buildPrimaryTitle(
+    normalizedBrand,
+    normalizedProductName,
+    normalizedColour
+  );
+
+  const tags = buildPrimaryTags({
+    brand: normalizedBrand,
+    productName: normalizedProductName,
+    colour: normalizedColour,
+    productType: productType || undefined,
+    category: category || undefined,
+    model: model || undefined,
+  });
+
+  return {
+    title,
+    vendor,
+    productType: productType || '',
+    category,
+    colour: normalizedColour,
+    model,
+    tags,
+    status,
+    descriptionHtml,
+  };
+}
+
 app.get('/', (_req, res) => {
   res.status(200).json({
     status: 'ok',
@@ -197,30 +287,39 @@ app.post('/products/by-sku', async (req, res) => {
   }
 });
 
-app.post('/products/create', async (req, res) => {
+app.post('/products/preview-primary', async (req, res) => {
   try {
-    const {
-      title,
-      vendor,
-      productType,
-      tags = [],
-      descriptionHtml,
-      status = 'DRAFT',
-    } = req.body;
+    const payload = buildPrimaryProductPayload(req.body);
 
-    if (!title) {
-      return res.status(400).json({ error: 'Missing title' });
-    }
+    res.json({
+      previewOnly: true,
+      rulesApplied: {
+        titleFormat: 'Brand - Product Name in Colour',
+        draftByDefault: true,
+        tagsIncluded: ['brand', 'productName', 'colour', 'productType', 'category', 'model'],
+      },
+      product: payload,
+    });
+  } catch (error) {
+    res.status(400).json({
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+  }
+});
+
+app.post('/products/create-primary', async (req, res) => {
+  try {
+    const payload = buildPrimaryProductPayload(req.body);
 
     const input: Record<string, unknown> = {
-      title,
-      status,
-      tags,
+      title: payload.title,
+      vendor: payload.vendor,
+      status: payload.status,
+      tags: payload.tags,
     };
 
-    if (vendor) input.vendor = vendor;
-    if (productType) input.productType = productType;
-    if (descriptionHtml) input.descriptionHtml = descriptionHtml;
+    if (payload.productType) input.productType = payload.productType;
+    if (payload.descriptionHtml) input.descriptionHtml = payload.descriptionHtml;
 
     const data = await shopifyGraphQL(
       `
@@ -246,10 +345,20 @@ app.post('/products/create', async (req, res) => {
     );
 
     if (data.productCreate.userErrors.length > 0) {
-      return res.status(400).json({ errors: data.productCreate.userErrors });
+      return res.status(400).json({
+        errors: data.productCreate.userErrors,
+      });
     }
 
-    res.json(data.productCreate.product);
+    res.json({
+      created: true,
+      rulesApplied: {
+        titleFormat: 'Brand - Product Name in Colour',
+        draftByDefault: true,
+        tagsApplied: payload.tags,
+      },
+      product: data.productCreate.product,
+    });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
