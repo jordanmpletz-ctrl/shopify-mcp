@@ -94,6 +94,8 @@ function buildPrimaryProductPayload(body: any) {
   const descriptionHtml = cleanText(body.descriptionHtml);
   const vendor = brand;
   const status = 'DRAFT';
+}
+
 function buildPrimaryVariantPayload(body: any) {
   const sku = cleanText(body.sku);
   const price = cleanText(body.price);
