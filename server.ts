@@ -520,8 +520,8 @@ app.get('/test-primary-preview', (_req, res) => {
     res.status(400).json({
       error: error instanceof Error ? error.message : 'Unknown error',
     });
-  }
-  app.get('/test-primary-variants-preview', (_req, res) => {
+  });  
+app.get('/test-primary-variants-preview', (_req, res) => {
   try {
     const productPayload = buildPrimaryProductPayload({
       brand: "Levi's",
