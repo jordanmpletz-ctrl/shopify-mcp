@@ -45,17 +45,6 @@ function cleanText(value: unknown): string {
   return String(value ?? '').trim();
 }
 
-function titleCase(input: string): string {
-  return input
-    .split(' ')
-    .filter(Boolean)
-    .map((word) => {
-      if (word.toUpperCase() === word && word.length > 1) return word;
-      return word.charAt(0).toUpperCase() + word.slice(1);
-    })
-    .join(' ');
-}
-
 function buildPrimaryTitle(brand: string, productName: string, colour: string): string {
   return `${brand} - ${productName} in ${colour}`;
 }
@@ -94,6 +83,38 @@ function buildPrimaryProductPayload(body: any) {
   const descriptionHtml = cleanText(body.descriptionHtml);
   const vendor = brand;
   const status = 'DRAFT';
+
+  if (!brand) throw new Error('Missing brand');
+  if (!productName) throw new Error('Missing productName');
+  if (!colour) throw new Error('Missing colour');
+
+  const title = buildPrimaryTitle(brand, productName, colour);
+
+  const tags = buildPrimaryTags({
+    brand,
+    productName,
+    colour,
+    productType: productType || undefined,
+    category: category || undefined,
+    model: model || undefined,
+  });
+
+  return {
+    title,
+    vendor,
+    productType: productType || '',
+    category,
+    colour,
+    model,
+    tags,
+    status,
+    descriptionHtml,
+  };
+}
+
+function normalizeSizes(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return [...new Set(input.map((v) => String(v).trim()).filter(Boolean))];
 }
 
 function buildPrimaryVariantPayload(body: any) {
@@ -114,40 +135,6 @@ function buildPrimaryVariantPayload(body: any) {
     cost,
     compareAtPrice,
     sizes,
-  };
-}  if (!brand) throw new Error('Missing brand');
-  if (!productName) throw new Error('Missing productName');
-  if (!colour) throw new Error('Missing colour');
-
-  const normalizedBrand = brand;
-  const normalizedProductName = productName;
-  const normalizedColour = colour;
-
-  const title = buildPrimaryTitle(
-    normalizedBrand,
-    normalizedProductName,
-    normalizedColour
-  );
-
-  const tags = buildPrimaryTags({
-    brand: normalizedBrand,
-    productName: normalizedProductName,
-    colour: normalizedColour,
-    productType: productType || undefined,
-    category: category || undefined,
-    model: model || undefined,
-  });
-
-  return {
-    title,
-    vendor,
-    productType: productType || '',
-    category,
-    colour: normalizedColour,
-    model,
-    tags,
-    status,
-    descriptionHtml,
   };
 }
 
