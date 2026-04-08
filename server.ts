@@ -560,6 +560,8 @@ app.get('/test-primary-variants-preview', (_req, res) => {
       error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
-});});app.listen(PORT, () => {
+});
+
+app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
