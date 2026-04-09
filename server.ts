@@ -815,7 +815,7 @@ app.post('/products/create-primary-with-variants', async (req, res) => {
       });
     }
 
-    res.json({
+        res.json({
       created: true,
       rulesApplied: {
         titleFormat: 'Brand - Product Name in Colour',
@@ -823,7 +823,7 @@ app.post('/products/create-primary-with-variants', async (req, res) => {
         sameSkuAcrossVariants: true,
       },
       product: createdProduct,
-          variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant: any) => ({
+      variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant: any) => ({
         id: variant.id,
         title: variant.title,
         sku: variant.inventoryItem?.sku || '',
