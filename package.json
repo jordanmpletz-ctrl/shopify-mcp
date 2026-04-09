@@ -1,0 +1,20 @@
+{
+  "name": "shopify-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.ts",
+  "scripts": {
+    "start": "node --loader tsx server.ts"
+  },
+  "dependencies": {
+    "express": "^5.0.0",
+    "@modelcontextprotocol/server": "^1.29.0",
+    "@modelcontextprotocol/node": "^1.29.0",
+    "@modelcontextprotocol/express": "^1.29.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.5"
+  }
+}
