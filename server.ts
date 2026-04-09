@@ -823,15 +823,16 @@ app.post('/products/create-primary-with-variants', async (req, res) => {
         sameSkuAcrossVariants: true,
       },
       product: createdProduct,
-      variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant: any) => ({
-  id: variant.id,
-  title: variant.title,
-  sku: variant.inventoryItem?.sku || '',
-  price: variant.price,
-  cost: variant.inventoryItem?.unitCost?.amount || null,
-  compareAtPrice: variant.compareAtPrice,
-  selectedOptions: variant.selectedOptions,
-})),    
+          variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant: any) => ({
+        id: variant.id,
+        title: variant.title,
+        sku: variant.inventoryItem?.sku || '',
+        price: variant.price,
+        cost: variant.inventoryItem?.unitCost?.amount || null,
+        compareAtPrice: variant.compareAtPrice,
+        selectedOptions: variant.selectedOptions,
+      })),
+    });
   } catch (error) {
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error',
