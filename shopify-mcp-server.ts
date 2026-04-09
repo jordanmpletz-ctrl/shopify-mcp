@@ -4,10 +4,10 @@
 
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { createMcpExpressApp } from '@modelcontextprotocol/express';
-import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
-import { McpServer } from '@modelcontextprotocol/server';
-import * as z from 'zod/v4';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import * as z from 'zod';
 
 type JsonMap = Record<string, unknown>;
 
