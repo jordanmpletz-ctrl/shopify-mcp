@@ -1,7 +1,3 @@
-// shopify-mcp-server.ts
-// Real MCP server for Shopify using the official MCP TypeScript SDK over Streamable HTTP.
-// Deploy this on Railway and point your MCP client at POST/GET /mcp
-
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { createMcpExpressApp } from '@modelcontextprotocol/express';
@@ -10,7 +6,6 @@ import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 type JsonMap = Record<string, unknown>;
-
 type ShopifyGraphQLResponse<T> = {
   data?: T;
   errors?: Array<{ message: string }>;
@@ -36,9 +31,9 @@ async function shopifyGraphQL<T>(query: string, variables: JsonMap = {}): Promis
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Shopify-Access-Token': SHOPIFY_ADMIN_ACCESS_TOKEN,
+      'X-Shopify-Access-Token': SHOPIFY_ADMIN_ACCESS_TOKEN
     },
-    body: JSON.stringify({ query, variables }),
+    body: JSON.stringify({ query, variables })
   });
 
   const json = (await response.json()) as ShopifyGraphQLResponse<T>;
@@ -91,7 +86,7 @@ function buildPrimaryTags(input: {
     input.productType || '',
     input.category || '',
     input.model || '',
-    ...(input.tags || []),
+    ...(input.tags || [])
   ]);
 }
 
@@ -134,8 +129,8 @@ function buildPrimaryProductPayload(input: {
       productType,
       category,
       model,
-      tags: extraTags,
-    }),
+      tags: extraTags
+    })
   };
 }
 
@@ -165,15 +160,15 @@ function buildVariantPayload(input: {
     cost,
     compareAtPrice: compareAtPrice || undefined,
     sizes,
-    imageUrls,
+    imageUrls
   };
 }
 
-function buildImageInputs(imageUrls: string[], brand: string): Array<{ originalSource: string; mediaContentType: 'IMAGE'; alt: string }> {
+function buildImageInputs(imageUrls: string[], brand: string) {
   return imageUrls.map((url, index) => ({
     originalSource: url,
     mediaContentType: 'IMAGE' as const,
-    alt: `${brand} image ${index + 1}`,
+    alt: `${brand} image ${index + 1}`
   }));
 }
 
@@ -181,7 +176,7 @@ const server = new McpServer({
   name: 'primary-shopify-mcp',
   version: '1.0.0',
   instructions:
-    'Use these tools to read and create Shopify products for Primary. Default new products to DRAFT. Use title format Brand - Product Name in Colour. Keep the same SKU across all size variants unless the user explicitly asks otherwise.',
+    'Use these tools to read and create Shopify products for Primary. Default new products to DRAFT. Use title format Brand - Product Name in Colour. Keep the same SKU across all size variants unless the user explicitly asks otherwise.'
 });
 
 server.registerTool(
@@ -190,11 +185,16 @@ server.registerTool(
     title: 'Shop Info',
     description: 'Get basic information about the connected Shopify store.',
     annotations: { readOnlyHint: true },
-    inputSchema: {},
+    inputSchema: {}
   },
   async () => {
     const data = await shopifyGraphQL<{
-      shop: { id: string; name: string; myshopifyDomain: string; currencyCode: string };
+      shop: {
+        id: string;
+        name: string;
+        myshopifyDomain: string;
+        currencyCode: string;
+      };
     }>(`
       query {
         shop {
@@ -207,7 +207,7 @@ server.registerTool(
     `);
 
     return {
-      content: [{ type: 'text', text: JSON.stringify(data.shop, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(data.shop, null, 2) }]
     };
   }
 );
@@ -220,8 +220,8 @@ server.registerTool(
     annotations: { readOnlyHint: true },
     inputSchema: {
       query: z.string().min(1),
-      first: z.number().int().min(1).max(50).default(10),
-    },
+      first: z.number().int().min(1).max(50).default(10)
+    }
   },
   async ({ query, first }) => {
     const data = await shopifyGraphQL<{
@@ -242,7 +242,9 @@ server.registerTool(
                   title: string;
                   sku?: string | null;
                   price?: string | null;
-                  inventoryItem?: { unitCost?: { amount?: string | null } | null } | null;
+                  inventoryItem?: {
+                    unitCost?: { amount?: string | null } | null;
+                  } | null;
                 };
               }>;
             };
@@ -298,12 +300,12 @@ server.registerTool(
         title: variantEdge.node.title,
         sku: variantEdge.node.sku || '',
         price: variantEdge.node.price || '',
-        cost: variantEdge.node.inventoryItem?.unitCost?.amount || null,
-      })),
+        cost: variantEdge.node.inventoryItem?.unitCost?.amount || null
+      }))
     }));
 
     return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
     };
   }
 );
@@ -315,8 +317,8 @@ server.registerTool(
     description: 'Find a product variant by SKU and return the matching product and variant details.',
     annotations: { readOnlyHint: true },
     inputSchema: {
-      sku: z.string().min(1),
-    },
+      sku: z.string().min(1)
+    }
   },
   async ({ sku }) => {
     const data = await shopifyGraphQL<{
@@ -327,7 +329,9 @@ server.registerTool(
             title: string;
             sku?: string | null;
             price?: string | null;
-            inventoryItem?: { unitCost?: { amount?: string | null } | null } | null;
+            inventoryItem?: {
+              unitCost?: { amount?: string | null } | null;
+            } | null;
             product: {
               id: string;
               title: string;
@@ -378,13 +382,13 @@ server.registerTool(
         title: edge.node.title,
         sku: edge.node.sku || '',
         price: edge.node.price || '',
-        cost: edge.node.inventoryItem?.unitCost?.amount || null,
+        cost: edge.node.inventoryItem?.unitCost?.amount || null
       },
-      product: edge.node.product,
+      product: edge.node.product
     }));
 
     return {
-      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
     };
   }
 );
@@ -409,28 +413,34 @@ server.registerTool(
       cost: z.string().min(1),
       compareAtPrice: z.string().optional(),
       sizes: z.array(z.string()).min(1),
-      imageUrls: z.array(z.string()).optional(),
-    },
+      imageUrls: z.array(z.string()).optional()
+    }
   },
   async (input) => {
     const product = buildPrimaryProductPayload(input);
     const variants = buildVariantPayload(input);
 
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          product,
-          variants: variants.sizes.map((size) => ({
-            size,
-            sku: variants.sku,
-            price: variants.price,
-            cost: variants.cost,
-            compareAtPrice: variants.compareAtPrice || null,
-          })),
-          images: variants.imageUrls,
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              product,
+              variants: variants.sizes.map((size) => ({
+                size,
+                sku: variants.sku,
+                price: variants.price,
+                cost: variants.cost,
+                compareAtPrice: variants.compareAtPrice || null
+              })),
+              images: variants.imageUrls
+            },
+            null,
+            2
+          )
+        }
+      ]
     };
   }
 );
@@ -439,7 +449,8 @@ server.registerTool(
   'create_primary_product_full',
   {
     title: 'Create Primary Product Full',
-    description: 'Create a Shopify product with Primary naming rules, tags, same-SKU size variants, cost, price, and optional images.',
+    description:
+      'Create a Shopify product with Primary naming rules, tags, same-SKU size variants, cost, price, and optional images.',
     annotations: { destructiveHint: true, openWorldHint: true, idempotentHint: false },
     inputSchema: {
       brand: z.string().min(1),
@@ -455,8 +466,8 @@ server.registerTool(
       cost: z.string().min(1),
       compareAtPrice: z.string().optional(),
       sizes: z.array(z.string()).min(1),
-      imageUrls: z.array(z.string()).optional(),
-    },
+      imageUrls: z.array(z.string()).optional()
+    }
   },
   async (input) => {
     const productPayload = buildPrimaryProductPayload(input);
@@ -465,7 +476,15 @@ server.registerTool(
 
     const createdProductData = await shopifyGraphQL<{
       productCreate: {
-        product: { id: string; title: string; handle: string; vendor: string; productType: string; tags: string[]; status: string } | null;
+        product: {
+          id: string;
+          title: string;
+          handle: string;
+          vendor: string;
+          productType: string;
+          tags: string[];
+          status: string;
+        } | null;
         userErrors: Array<{ field?: string[] | null; message: string }>;
       };
     }>(
@@ -495,8 +514,8 @@ server.registerTool(
           productType: productPayload.productType || undefined,
           status: productPayload.status,
           tags: productPayload.tags,
-          descriptionHtml: productPayload.descriptionHtml || undefined,
-        },
+          descriptionHtml: productPayload.descriptionHtml || undefined
+        }
       }
     );
 
@@ -535,9 +554,9 @@ server.registerTool(
         options: [
           {
             name: 'Size',
-            values: variantPayload.sizes.map((size) => ({ name: size })),
-          },
-        ],
+            values: variantPayload.sizes.map((size) => ({ name: size }))
+          }
+        ]
       }
     );
 
@@ -554,9 +573,9 @@ server.registerTool(
       inventoryItem: {
         sku: variantPayload.sku,
         tracked: true,
-        cost: variantPayload.cost,
+        cost: variantPayload.cost
       },
-      mediaSrc: variantPayload.imageUrls.length ? [variantPayload.imageUrls[0]] : undefined,
+      mediaSrc: variantPayload.imageUrls.length ? [variantPayload.imageUrls[0]] : undefined
     }));
 
     const bulkCreateData = await shopifyGraphQL<{
@@ -610,7 +629,7 @@ server.registerTool(
       {
         productId: createdProduct.id,
         variants: variantsPayload,
-        media: imageInputs.length ? imageInputs : undefined,
+        media: imageInputs.length ? imageInputs : undefined
       }
     );
 
@@ -619,23 +638,29 @@ server.registerTool(
     }
 
     return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          created: true,
-          product: createdProduct,
-          variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant) => ({
-            id: variant.id,
-            title: variant.title,
-            sku: variant.inventoryItem?.sku || '',
-            price: variant.price || '',
-            cost: variant.inventoryItem?.unitCost?.amount || null,
-            compareAtPrice: variant.compareAtPrice || null,
-            selectedOptions: variant.selectedOptions,
-          })),
-          imagesRequested: variantPayload.imageUrls,
-        }, null, 2),
-      }],
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify(
+            {
+              created: true,
+              product: createdProduct,
+              variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant) => ({
+                id: variant.id,
+                title: variant.title,
+                sku: variant.inventoryItem?.sku || '',
+                price: variant.price || '',
+                cost: variant.inventoryItem?.unitCost?.amount || null,
+                compareAtPrice: variant.compareAtPrice || null,
+                selectedOptions: variant.selectedOptions
+              })),
+              imagesRequested: variantPayload.imageUrls
+            },
+            null,
+            2
+          )
+        }
+      ]
     };
   }
 );
@@ -647,7 +672,7 @@ expressApp.get('/', (_req, res) => {
   res.status(200).json({
     status: 'ok',
     message: 'Real Shopify MCP server is running',
-    mcpEndpoint: '/mcp',
+    mcpEndpoint: '/mcp'
   });
 });
 
@@ -659,10 +684,10 @@ const mcpApp = createMcpExpressApp(server, {
   basePath: '/mcp',
   verboseLogs: true,
   transport: (_req) =>
-    NodeStreamableHTTPServerTransport({
+    new NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
-      enableJsonResponse: true,
-    }),
+      enableJsonResponse: true
+    })
 });
 
 expressApp.use(mcpApp);
@@ -670,35 +695,3 @@ expressApp.use(mcpApp);
 expressApp.listen(PORT, () => {
   console.log(`Real Shopify MCP server running on port ${PORT}`);
 });
-
-/*
-package.json
------------
-{
-  "name": "primary-shopify-mcp",
-  "version": "1.0.0",
-  "type": "module",
-  "scripts": {
-    "start": "node --import tsx shopify-mcp-server.ts"
-  },
-  "dependencies": {
-    "@modelcontextprotocol/express": "^1.17.5",
-    "@modelcontextprotocol/node": "^1.17.5",
-    "@modelcontextprotocol/server": "^1.17.5",
-    "express": "^4.21.2",
-    "zod": "^4.0.0"
-  },
-  "devDependencies": {
-    "tsx": "^4.20.6"
-  }
-}
-
-Railway variables
------------------
-SHOPIFY_STORE_DOMAIN=primary-skateboards.myshopify.com
-SHOPIFY_ADMIN_ACCESS_TOKEN=your_token_here
-SHOPIFY_API_VERSION=2026-04
-
-Your MCP client should target:
-POST/GET https://YOUR-RAILWAY-DOMAIN/mcp
-*/
