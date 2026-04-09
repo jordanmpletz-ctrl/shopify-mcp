@@ -659,7 +659,7 @@ const mcpApp = createMcpExpressApp(server, {
   basePath: '/mcp',
   verboseLogs: true,
   transport: (_req) =>
-    new NodeStreamableHTTPServerTransport({
+    new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       enableJsonResponse: true,
     }),
