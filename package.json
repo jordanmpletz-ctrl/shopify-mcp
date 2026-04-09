@@ -6,9 +6,7 @@
     "start": "node --import tsx shopify-mcp-server.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/express": "^1.17.5",
-    "@modelcontextprotocol/node": "^1.17.5",
-    "@modelcontextprotocol/server": "^1.17.5",
+    "@modelcontextprotocol/sdk": "^1.17.5",
     "express": "^4.21.2",
     "zod": "^4.0.0"
   },
