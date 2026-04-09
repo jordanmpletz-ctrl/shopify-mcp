@@ -1,34 +1,20 @@
+// shopify-mcp-server.ts
+// Real MCP server for Shopify using the official MCP TypeScript SDK over Streamable HTTP.
+// Deploy this on Railway and point your MCP client at POST/GET /mcp
+
 import express from 'express';
+import { randomUUID } from 'node:crypto';
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import { McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 
 type JsonMap = Record<string, unknown>;
 
-type ProductRulesInput = {
-  brand: string;
-  productName: string;
-  colour: string;
-  productType?: string;
-  category?: string;
-  model?: string;
-  descriptionHtml?: string;
-  tags?: string[];
+type ShopifyGraphQLResponse<T> = {
+  data?: T;
+  errors?: Array<{ message: string }>;
 };
-
-type VariantRulesInput = {
-  sku: string;
-  price: string;
-  cost: string;
-  compareAtPrice?: string;
-  sizes: string[];
-  imageUrls?: string[];
-};
-
-type ImageInput = {
-  url: string;
-  alt?: string;
-};
-
-const app = express();
-app.use(express.json({ limit: '25mb' }));
 
 const SHOPIFY_STORE_DOMAIN = process.env.SHOPIFY_STORE_DOMAIN;
 const SHOPIFY_ADMIN_ACCESS_TOKEN = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
@@ -43,10 +29,10 @@ if (!SHOPIFY_ADMIN_ACCESS_TOKEN) {
   throw new Error('Missing SHOPIFY_ADMIN_ACCESS_TOKEN');
 }
 
-const endpoint = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
+const shopifyEndpoint = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/graphql.json`;
 
 async function shopifyGraphQL<T>(query: string, variables: JsonMap = {}): Promise<T> {
-  const response = await fetch(endpoint, {
+  const response = await fetch(shopifyEndpoint, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -55,10 +41,7 @@ async function shopifyGraphQL<T>(query: string, variables: JsonMap = {}): Promis
     body: JSON.stringify({ query, variables }),
   });
 
-  const json = (await response.json()) as {
-    data?: T;
-    errors?: Array<{ message: string }>;
-  };
+  const json = (await response.json()) as ShopifyGraphQLResponse<T>;
 
   if (!response.ok) {
     throw new Error(`Shopify HTTP error ${response.status}: ${JSON.stringify(json)}`);
@@ -81,7 +64,7 @@ function cleanText(value: unknown): string {
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return [...new Set(value.map((item) => cleanText(item)).filter(Boolean))];
+  return [...new Set(value.map((v) => cleanText(v)).filter(Boolean))];
 }
 
 function uniqueTags(tags: string[]): string[] {
@@ -92,29 +75,44 @@ function buildPrimaryTitle(brand: string, productName: string, colour: string): 
   return `${brand} - ${productName} in ${colour}`;
 }
 
-function buildPrimaryTags(input: ProductRulesInput): string[] {
-  const baseTags = [
+function buildPrimaryTags(input: {
+  brand: string;
+  productName: string;
+  colour: string;
+  productType?: string;
+  category?: string;
+  model?: string;
+  tags?: string[];
+}): string[] {
+  return uniqueTags([
     input.brand,
     input.productName,
     input.colour,
     input.productType || '',
     input.category || '',
     input.model || '',
-    ...normalizeStringArray(input.tags || []),
-  ];
-
-  return uniqueTags(baseTags);
+    ...(input.tags || []),
+  ]);
 }
 
-function buildPrimaryProductPayload(body: any) {
-  const brand = cleanText(body.brand);
-  const productName = cleanText(body.productName);
-  const colour = cleanText(body.colour);
-  const productType = cleanText(body.productType);
-  const category = cleanText(body.category);
-  const model = cleanText(body.model);
-  const descriptionHtml = cleanText(body.descriptionHtml);
-  const extraTags = normalizeStringArray(body.tags);
+function buildPrimaryProductPayload(input: {
+  brand: string;
+  productName: string;
+  colour: string;
+  productType?: string;
+  category?: string;
+  model?: string;
+  descriptionHtml?: string;
+  tags?: string[];
+}) {
+  const brand = cleanText(input.brand);
+  const productName = cleanText(input.productName);
+  const colour = cleanText(input.colour);
+  const productType = cleanText(input.productType);
+  const category = cleanText(input.category);
+  const model = cleanText(input.model);
+  const descriptionHtml = cleanText(input.descriptionHtml);
+  const extraTags = normalizeStringArray(input.tags);
 
   if (!brand) throw new Error('Missing brand');
   if (!productName) throw new Error('Missing productName');
@@ -136,19 +134,25 @@ function buildPrimaryProductPayload(body: any) {
       productType,
       category,
       model,
-      descriptionHtml,
       tags: extraTags,
     }),
   };
 }
 
-function buildPrimaryVariantPayload(body: any): VariantRulesInput {
-  const sku = cleanText(body.sku);
-  const price = cleanText(body.price);
-  const cost = cleanText(body.cost);
-  const compareAtPrice = cleanText(body.compareAtPrice);
-  const sizes = normalizeStringArray(body.sizes);
-  const imageUrls = normalizeStringArray(body.imageUrls);
+function buildVariantPayload(input: {
+  sku: string;
+  price: string;
+  cost: string;
+  compareAtPrice?: string;
+  sizes: string[];
+  imageUrls?: string[];
+}) {
+  const sku = cleanText(input.sku);
+  const price = cleanText(input.price);
+  const cost = cleanText(input.cost);
+  const compareAtPrice = cleanText(input.compareAtPrice);
+  const sizes = normalizeStringArray(input.sizes);
+  const imageUrls = normalizeStringArray(input.imageUrls);
 
   if (!sku) throw new Error('Missing sku');
   if (!price) throw new Error('Missing price');
@@ -165,34 +169,32 @@ function buildPrimaryVariantPayload(body: any): VariantRulesInput {
   };
 }
 
-function buildImageInputs(body: any): ImageInput[] {
-  const imageUrls = normalizeStringArray(body.imageUrls);
+function buildImageInputs(imageUrls: string[], brand: string): Array<{ originalSource: string; mediaContentType: 'IMAGE'; alt: string }> {
   return imageUrls.map((url, index) => ({
-    url,
-    alt: cleanText(body.imageAltTexts?.[index]) || `${cleanText(body.brand) || 'Product'} image ${index + 1}`,
+    originalSource: url,
+    mediaContentType: 'IMAGE' as const,
+    alt: `${brand} image ${index + 1}`,
   }));
 }
 
-app.get('/', (_req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    message: 'Shopify MCP bridge is running',
-  });
+const server = new McpServer({
+  name: 'primary-shopify-mcp',
+  version: '1.0.0',
+  instructions:
+    'Use these tools to read and create Shopify products for Primary. Default new products to DRAFT. Use title format Brand - Product Name in Colour. Keep the same SKU across all size variants unless the user explicitly asks otherwise.',
 });
 
-app.get('/health', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
-app.get('/shop', async (_req, res) => {
-  try {
+server.registerTool(
+  'shop_info',
+  {
+    title: 'Shop Info',
+    description: 'Get basic information about the connected Shopify store.',
+    annotations: { readOnlyHint: true },
+    inputSchema: {},
+  },
+  async () => {
     const data = await shopifyGraphQL<{
-      shop: {
-        id: string;
-        name: string;
-        myshopifyDomain: string;
-        currencyCode: string;
-      };
+      shop: { id: string; name: string; myshopifyDomain: string; currencyCode: string };
     }>(`
       query {
         shop {
@@ -204,23 +206,24 @@ app.get('/shop', async (_req, res) => {
       }
     `);
 
-    res.json(data.shop);
-  } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    return {
+      content: [{ type: 'text', text: JSON.stringify(data.shop, null, 2) }],
+    };
   }
-});
+);
 
-app.post('/products/search', async (req, res) => {
-  try {
-    const query = cleanText(req.body.query);
-    const first = Number(req.body.first || 10);
-
-    if (!query) {
-      return res.status(400).json({ error: 'Missing query' });
-    }
-
+server.registerTool(
+  'search_products',
+  {
+    title: 'Search Products',
+    description: 'Search Shopify products by title, tag, handle, vendor, or SKU-like query.',
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      query: z.string().min(1),
+      first: z.number().int().min(1).max(50).default(10),
+    },
+  },
+  async ({ query, first }) => {
     const data = await shopifyGraphQL<{
       products: {
         edges: Array<{
@@ -232,19 +235,6 @@ app.post('/products/search', async (req, res) => {
             productType: string;
             tags: string[];
             status: string;
-            media: {
-              edges: Array<{
-                node: {
-                  id: string;
-                  alt?: string | null;
-                  preview?: {
-                    image?: {
-                      url?: string | null;
-                    } | null;
-                  } | null;
-                };
-              }>;
-            };
             variants: {
               edges: Array<{
                 node: {
@@ -252,11 +242,7 @@ app.post('/products/search', async (req, res) => {
                   title: string;
                   sku?: string | null;
                   price?: string | null;
-                  inventoryItem?: {
-                    unitCost?: {
-                      amount?: string | null;
-                    } | null;
-                  } | null;
+                  inventoryItem?: { unitCost?: { amount?: string | null } | null } | null;
                 };
               }>;
             };
@@ -276,21 +262,6 @@ app.post('/products/search', async (req, res) => {
               productType
               tags
               status
-              media(first: 20) {
-                edges {
-                  node {
-                    ... on MediaImage {
-                      id
-                      alt
-                      preview {
-                        image {
-                          url
-                        }
-                      }
-                    }
-                  }
-                }
-              }
               variants(first: 50) {
                 edges {
                   node {
@@ -314,44 +285,40 @@ app.post('/products/search', async (req, res) => {
       { query, first }
     );
 
-    res.json(
-      data.products.edges.map((edge) => ({
-        id: edge.node.id,
-        title: edge.node.title,
-        handle: edge.node.handle,
-        vendor: edge.node.vendor,
-        productType: edge.node.productType,
-        tags: edge.node.tags,
-        status: edge.node.status,
-        images: edge.node.media.edges.map((mediaEdge) => ({
-          id: mediaEdge.node.id,
-          alt: mediaEdge.node.alt || '',
-          url: mediaEdge.node.preview?.image?.url || '',
-        })),
-        variants: edge.node.variants.edges.map((variantEdge) => ({
-          id: variantEdge.node.id,
-          title: variantEdge.node.title,
-          sku: variantEdge.node.sku || '',
-          price: variantEdge.node.price || '',
-          cost: variantEdge.node.inventoryItem?.unitCost?.amount || null,
-        })),
-      }))
-    );
-  } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    const result = data.products.edges.map((edge) => ({
+      id: edge.node.id,
+      title: edge.node.title,
+      handle: edge.node.handle,
+      vendor: edge.node.vendor,
+      productType: edge.node.productType,
+      tags: edge.node.tags,
+      status: edge.node.status,
+      variants: edge.node.variants.edges.map((variantEdge) => ({
+        id: variantEdge.node.id,
+        title: variantEdge.node.title,
+        sku: variantEdge.node.sku || '',
+        price: variantEdge.node.price || '',
+        cost: variantEdge.node.inventoryItem?.unitCost?.amount || null,
+      })),
+    }));
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
   }
-});
+);
 
-app.post('/products/by-sku', async (req, res) => {
-  try {
-    const sku = cleanText(req.body.sku);
-
-    if (!sku) {
-      return res.status(400).json({ error: 'Missing sku' });
-    }
-
+server.registerTool(
+  'get_product_by_sku',
+  {
+    title: 'Get Product By SKU',
+    description: 'Find a product variant by SKU and return the matching product and variant details.',
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      sku: z.string().min(1),
+    },
+  },
+  async ({ sku }) => {
     const data = await shopifyGraphQL<{
       productVariants: {
         edges: Array<{
@@ -360,11 +327,7 @@ app.post('/products/by-sku', async (req, res) => {
             title: string;
             sku?: string | null;
             price?: string | null;
-            inventoryItem?: {
-              unitCost?: {
-                amount?: string | null;
-              } | null;
-            } | null;
+            inventoryItem?: { unitCost?: { amount?: string | null } | null } | null;
             product: {
               id: string;
               title: string;
@@ -409,42 +372,100 @@ app.post('/products/by-sku', async (req, res) => {
       { query: `sku:${sku}` }
     );
 
-    res.json(
-      data.productVariants.edges.map((edge) => ({
-        variant: {
-          id: edge.node.id,
-          title: edge.node.title,
-          sku: edge.node.sku || '',
-          price: edge.node.price || '',
-          cost: edge.node.inventoryItem?.unitCost?.amount || null,
-        },
-        product: edge.node.product,
-      }))
-    );
-  } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    const result = data.productVariants.edges.map((edge) => ({
+      variant: {
+        id: edge.node.id,
+        title: edge.node.title,
+        sku: edge.node.sku || '',
+        price: edge.node.price || '',
+        cost: edge.node.inventoryItem?.unitCost?.amount || null,
+      },
+      product: edge.node.product,
+    }));
+
+    return {
+      content: [{ type: 'text', text: JSON.stringify(result, null, 2) }],
+    };
   }
-});
+);
 
-app.post('/products/create-primary-full', async (req, res) => {
-  try {
-    const productPayload = buildPrimaryProductPayload(req.body);
-    const variantPayload = buildPrimaryVariantPayload(req.body);
-    const imageInputs = buildImageInputs(req.body);
+server.registerTool(
+  'preview_primary_product',
+  {
+    title: 'Preview Primary Product',
+    description: 'Preview how a Primary product will be normalized before creating it in Shopify.',
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      brand: z.string().min(1),
+      productName: z.string().min(1),
+      colour: z.string().min(1),
+      productType: z.string().optional(),
+      category: z.string().optional(),
+      model: z.string().optional(),
+      descriptionHtml: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      sku: z.string().min(1),
+      price: z.string().min(1),
+      cost: z.string().min(1),
+      compareAtPrice: z.string().optional(),
+      sizes: z.array(z.string()).min(1),
+      imageUrls: z.array(z.string()).optional(),
+    },
+  },
+  async (input) => {
+    const product = buildPrimaryProductPayload(input);
+    const variants = buildVariantPayload(input);
 
-    const createProductData = await shopifyGraphQL<{
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          product,
+          variants: variants.sizes.map((size) => ({
+            size,
+            sku: variants.sku,
+            price: variants.price,
+            cost: variants.cost,
+            compareAtPrice: variants.compareAtPrice || null,
+          })),
+          images: variants.imageUrls,
+        }, null, 2),
+      }],
+    };
+  }
+);
+
+server.registerTool(
+  'create_primary_product_full',
+  {
+    title: 'Create Primary Product Full',
+    description: 'Create a Shopify product with Primary naming rules, tags, same-SKU size variants, cost, price, and optional images.',
+    annotations: { destructiveHint: true, openWorldHint: true, idempotentHint: false },
+    inputSchema: {
+      brand: z.string().min(1),
+      productName: z.string().min(1),
+      colour: z.string().min(1),
+      productType: z.string().optional(),
+      category: z.string().optional(),
+      model: z.string().optional(),
+      descriptionHtml: z.string().optional(),
+      tags: z.array(z.string()).optional(),
+      sku: z.string().min(1),
+      price: z.string().min(1),
+      cost: z.string().min(1),
+      compareAtPrice: z.string().optional(),
+      sizes: z.array(z.string()).min(1),
+      imageUrls: z.array(z.string()).optional(),
+    },
+  },
+  async (input) => {
+    const productPayload = buildPrimaryProductPayload(input);
+    const variantPayload = buildVariantPayload(input);
+    const imageInputs = buildImageInputs(variantPayload.imageUrls, productPayload.vendor);
+
+    const createdProductData = await shopifyGraphQL<{
       productCreate: {
-        product: {
-          id: string;
-          title: string;
-          handle: string;
-          vendor: string;
-          productType: string;
-          tags: string[];
-          status: string;
-        } | null;
+        product: { id: string; title: string; handle: string; vendor: string; productType: string; tags: string[]; status: string } | null;
         userErrors: Array<{ field?: string[] | null; message: string }>;
       };
     }>(
@@ -479,25 +500,16 @@ app.post('/products/create-primary-full', async (req, res) => {
       }
     );
 
-    if (createProductData.productCreate.userErrors.length) {
-      return res.status(400).json({
-        stage: 'productCreate',
-        errors: createProductData.productCreate.userErrors,
-      });
+    if (createdProductData.productCreate.userErrors.length) {
+      throw new Error(JSON.stringify(createdProductData.productCreate.userErrors));
     }
 
-    const createdProduct = createProductData.productCreate.product;
-
-    if (!createdProduct) {
-      throw new Error('Product was not returned from Shopify');
-    }
+    const createdProduct = createdProductData.productCreate.product;
+    if (!createdProduct) throw new Error('Shopify did not return a created product');
 
     const optionsCreateData = await shopifyGraphQL<{
       productOptionsCreate: {
-        product: {
-          id: string;
-          options: Array<{ id: string; name: string }>;
-        } | null;
+        product: { id: string; options: Array<{ id: string; name: string }> } | null;
         userErrors: Array<{ field?: string[] | null; message: string }>;
       };
     }>(
@@ -530,18 +542,8 @@ app.post('/products/create-primary-full', async (req, res) => {
     );
 
     if (optionsCreateData.productOptionsCreate.userErrors.length) {
-      return res.status(400).json({
-        stage: 'productOptionsCreate',
-        errors: optionsCreateData.productOptionsCreate.userErrors,
-        product: createdProduct,
-      });
+      throw new Error(JSON.stringify(optionsCreateData.productOptionsCreate.userErrors));
     }
-
-    const mediaPayload = imageInputs.map((image) => ({
-      originalSource: image.url,
-      mediaContentType: 'IMAGE',
-      alt: image.alt || undefined,
-    }));
 
     const variantsPayload = variantPayload.sizes.map((size) => ({
       optionValues: [{ optionName: 'Size', name: size }],
@@ -559,10 +561,7 @@ app.post('/products/create-primary-full', async (req, res) => {
 
     const bulkCreateData = await shopifyGraphQL<{
       productVariantsBulkCreate: {
-        product: {
-          id: string;
-          title: string;
-        } | null;
+        product: { id: string; title: string } | null;
         productVariants: Array<{
           id: string;
           title: string;
@@ -570,10 +569,7 @@ app.post('/products/create-primary-full', async (req, res) => {
           compareAtPrice?: string | null;
           inventoryItem?: {
             sku?: string | null;
-            unitCost?: {
-              amount?: string | null;
-              currencyCode?: string | null;
-            } | null;
+            unitCost?: { amount?: string | null; currencyCode?: string | null } | null;
           } | null;
           selectedOptions: Array<{ name: string; value: string }>;
         }>;
@@ -581,11 +577,7 @@ app.post('/products/create-primary-full', async (req, res) => {
       };
     }>(
       `
-      mutation BulkCreateVariants(
-        $productId: ID!
-        $variants: [ProductVariantsBulkInput!]!
-        $media: [CreateMediaInput!]
-      ) {
+      mutation BulkCreateVariants($productId: ID!, $variants: [ProductVariantsBulkInput!]!, $media: [CreateMediaInput!]) {
         productVariantsBulkCreate(productId: $productId, variants: $variants, media: $media, strategy: REMOVE_STANDALONE_VARIANT) {
           product {
             id
@@ -618,180 +610,95 @@ app.post('/products/create-primary-full', async (req, res) => {
       {
         productId: createdProduct.id,
         variants: variantsPayload,
-        media: mediaPayload.length ? mediaPayload : undefined,
+        media: imageInputs.length ? imageInputs : undefined,
       }
     );
 
     if (bulkCreateData.productVariantsBulkCreate.userErrors.length) {
-      return res.status(400).json({
-        stage: 'productVariantsBulkCreate',
-        errors: bulkCreateData.productVariantsBulkCreate.userErrors,
-        product: createdProduct,
-      });
+      throw new Error(JSON.stringify(bulkCreateData.productVariantsBulkCreate.userErrors));
     }
 
-    let addedMedia: Array<{ alt?: string | null; status?: string | null; previewUrl?: string | null }> = [];
-
-    if (imageInputs.length > 1) {
-      const extraImages = imageInputs.slice(1).map((image) => ({
-        originalSource: image.url,
-        mediaContentType: 'IMAGE',
-        alt: image.alt || undefined,
-      }));
-
-      const mediaData = await shopifyGraphQL<{
-        productCreateMedia: {
-          media: Array<{
-            alt?: string | null;
-            status?: string | null;
-            preview?: {
-              image?: {
-                url?: string | null;
-              } | null;
-            } | null;
-          }>;
-          mediaUserErrors: Array<{ field?: string[] | null; message: string }>;
-        };
-      }>(
-        `
-        mutation ProductCreateMedia($productId: ID!, $media: [CreateMediaInput!]!) {
-          productCreateMedia(productId: $productId, media: $media) {
-            media {
-              ... on MediaImage {
-                alt
-                status
-                preview {
-                  image {
-                    url
-                  }
-                }
-              }
-            }
-            mediaUserErrors {
-              field
-              message
-            }
-          }
-        }
-        `,
-        {
-          productId: createdProduct.id,
-          media: extraImages,
-        }
-      );
-
-      if (mediaData.productCreateMedia.mediaUserErrors.length) {
-        return res.status(400).json({
-          stage: 'productCreateMedia',
-          errors: mediaData.productCreateMedia.mediaUserErrors,
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          created: true,
           product: createdProduct,
-          variants: bulkCreateData.productVariantsBulkCreate.productVariants,
-        });
-      }
-
-      addedMedia = mediaData.productCreateMedia.media.map((media) => ({
-        alt: media.alt || null,
-        status: media.status || null,
-        previewUrl: media.preview?.image?.url || null,
-      }));
-    }
-
-    res.json({
-      created: true,
-      rulesApplied: {
-        titleFormat: 'Brand - Product Name in Colour',
-        draftByDefault: true,
-        sameSkuAcrossVariants: true,
-        costIncluded: true,
-        imagesAttachedInGivenOrder: true,
-      },
-      product: createdProduct,
-      variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant) => ({
-        id: variant.id,
-        title: variant.title,
-        sku: variant.inventoryItem?.sku || '',
-        price: variant.price || '',
-        cost: variant.inventoryItem?.unitCost?.amount || null,
-        compareAtPrice: variant.compareAtPrice || null,
-        selectedOptions: variant.selectedOptions,
-      })),
-      images: {
-        requested: imageInputs,
-        attachedExtraMedia: addedMedia,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+          variants: bulkCreateData.productVariantsBulkCreate.productVariants.map((variant) => ({
+            id: variant.id,
+            title: variant.title,
+            sku: variant.inventoryItem?.sku || '',
+            price: variant.price || '',
+            cost: variant.inventoryItem?.unitCost?.amount || null,
+            compareAtPrice: variant.compareAtPrice || null,
+            selectedOptions: variant.selectedOptions,
+          })),
+          imagesRequested: variantPayload.imageUrls,
+        }, null, 2),
+      }],
+    };
   }
+);
+
+const expressApp = express();
+expressApp.use(express.json({ limit: '25mb' }));
+
+expressApp.get('/', (_req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'Real Shopify MCP server is running',
+    mcpEndpoint: '/mcp',
+  });
 });
 
-app.get('/test-primary-preview', (_req, res) => {
-  try {
-    const payload = buildPrimaryProductPayload({
-      brand: "Levi's",
-      productName: '469 Loose Shorts',
-      colour: 'Vintage Story',
-      productType: 'Shorts',
-      category: 'Apparel',
-      model: '469',
-      descriptionHtml: '<p>Test product preview</p>',
-    });
+expressApp.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
 
-    res.json({
-      previewOnly: true,
-      product: payload,
-    });
-  } catch (error) {
-    res.status(400).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+const mcpApp = createMcpExpressApp(server, {
+  basePath: '/mcp',
+  verboseLogs: true,
+  transport: (_req) =>
+    new NodeStreamableHTTPServerTransport({
+      sessionIdGenerator: () => randomUUID(),
+      enableJsonResponse: true,
+    }),
+});
+
+expressApp.use(mcpApp);
+
+expressApp.listen(PORT, () => {
+  console.log(`Real Shopify MCP server running on port ${PORT}`);
+});
+
+/*
+package.json
+-----------
+{
+  "name": "primary-shopify-mcp",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "node --import tsx shopify-mcp-server.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/express": "^1.17.5",
+    "@modelcontextprotocol/node": "^1.17.5",
+    "@modelcontextprotocol/server": "^1.17.5",
+    "express": "^4.21.2",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.6"
   }
-});
+}
 
-app.get('/test-primary-variants-preview', (_req, res) => {
-  try {
-    const productPayload = buildPrimaryProductPayload({
-      brand: "Levi's",
-      productName: '469 Loose Shorts',
-      colour: 'Vintage Story',
-      productType: 'Shorts',
-      category: 'Apparel',
-      model: '469',
-      descriptionHtml: '<p>Test product preview</p>',
-    });
+Railway variables
+-----------------
+SHOPIFY_STORE_DOMAIN=primary-skateboards.myshopify.com
+SHOPIFY_ADMIN_ACCESS_TOKEN=your_token_here
+SHOPIFY_API_VERSION=2026-04
 
-    const variantPayload = buildPrimaryVariantPayload({
-      sku: '39434-0157',
-      price: '88.00',
-      cost: '44.00',
-      sizes: ['30', '31', '32', '33', '34'],
-      imageUrls: [
-        'https://example.com/main-white-background.jpg',
-        'https://example.com/model-1.jpg',
-        'https://example.com/model-2.jpg',
-      ],
-    });
-
-    res.json({
-      previewOnly: true,
-      product: productPayload,
-      variants: variantPayload.sizes.map((size) => ({
-        size,
-        sku: variantPayload.sku,
-        price: variantPayload.price,
-        cost: variantPayload.cost,
-      })),
-      images: variantPayload.imageUrls,
-    });
-  } catch (error) {
-    res.status(400).json({
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-});
-
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+Your MCP client should target:
+POST/GET https://YOUR-RAILWAY-DOMAIN/mcp
+*/
