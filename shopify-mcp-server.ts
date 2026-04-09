@@ -4,10 +4,10 @@
 
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { createMcpExpressApp } from '@modelcontextprotocol/sdk/server/express.js';
-import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import * as z from 'zod';
+import { createMcpExpressApp } from '@modelcontextprotocol/express';
+import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
+import { McpServer } from '@modelcontextprotocol/server';
+import * as z from 'zod/v4';
 
 type JsonMap = Record<string, unknown>;
 
@@ -659,7 +659,7 @@ const mcpApp = createMcpExpressApp(server, {
   basePath: '/mcp',
   verboseLogs: true,
   transport: (_req) =>
-    new StreamableHTTPServerTransport({
+    NodeStreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       enableJsonResponse: true,
     }),
